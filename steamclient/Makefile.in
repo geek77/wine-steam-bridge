@@ -1,0 +1,9 @@
+# Generated from steamclient.dll by winedump.
+MODULE    = steamclient.dll
+EXTRALIBS = -ldl
+
+C_SRCS = \
+	steamclient_main.c
+
+@MAKE_DLL_RULES@
+
