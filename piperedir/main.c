@@ -2,109 +2,16 @@
 #include <stdio.h>
 #include <string.h>
 
-struct _entry {
-    char *buffer;
-    int   size;
-    struct _entry *next;
-};
+/*
+ * use pipeproxy for reading and writing to target pipes
+ */
+ 
 
-struct _queue {
-    HANDLE mutex;
-    HANDLE event;
-    struct _entry *first;
-    struct _entry *last;
-};
-
-typedef struct _queue queue_t;
-typedef struct _entry entry_t;
-queue_t * 
-    new_queue() 
-{
-    queue_t *q = (queue_t*)malloc(sizeof(queue_t));
-    if (q==NULL) return NULL;
-    q->mutex = CreateMutex(NULL, FALSE, NULL);
-    if (q->mutex==NULL) goto error;    
-    q->event = CreateEvent(NULL, TRUE, FALSE, TEXT("update"));
-    if (q->event==NULL) goto error;
-    q->first = NULL;
-    q->last = NULL;
-    return q;
-    error:
-	if (q->event!=NULL) CloseEvent(q->event);
-	free(q);
-	return NULL;
-};
-
-entry_t *
-    new_entry(char *data, int len)
-{
-    entry_t *e = (entry_t*)malloc(sizeof(entry_t));
-    if (e==NULL) return NULL;
-    e->buffer = (char*)malloc(len);
-    if (e->buffer==NULL) {
-	free(e);
-	return NULL;
-    }
-    memcpy(e->buffer,data,len);
-    e->next = NULL;
-    return;
-}
-
-void 
-    entry_free(entry_t *e)
-{
-    if (e==NULL) return;
-    if (e->buffer!=NULL) free(e->buffer);
-    free(e);
-}
-
-int
-    push_to_queue(queue_t *q, char *data, int len)
-{
-    entry_t *e;
-    DWORD wait;
-    if (q==NULL||data==NULL||len==0) return -1;
-    e = new_entry(data,len);
-    if (e==NULL) return -1;
-    wait = WaitForSingleObject(q->mutex,INFINITE);
-    if (WAIT_ABANDONED==wait) return -1;
-    
-    if (q->first==NULL) {
-	q->first = e;
-	q->last = e;
-    } else {
-	q->last = e;
-    }
-    
-    ReleaseMutex(q->mutex);
-    if (!SetEvent(q->event))
-	return -1;	
-}
-
-int
-    fetch_from_queue(queue_t *q, char **data, int *len)
-{
-    entry_t *e;
-    DWORD wait;
-    if (q==NULL) return -1;
-    wait = WaitForSingleObject(q->mutex,INFINITE);
-    if (WAIT_ABANDONED==wait) return -1;
-    
-    if (q->first == NULL) {
-	ReleaseMutex(q->mutex);
-	return -1;
-    }
-    e = q->first;
-    if (e->next == NULL) {
-	q->first = NULL;
-	q->last = NULL;
-    }
-    ReleaseMutex(q->mutex);
-    *data = e->buffer;
-    *len = e->size;
-    free(e);
-    return 0;
-}
+struct _pipe {
+    char *name;
+    HANDLE w;
+    void*  l;
+} pipe_t;
 
 /*
 
@@ -114,7 +21,7 @@ static const char WIN_CLIENT_SERVICE[] = L"\\\\.\\pipe\\steam-mstr-cs";
 static const char WIN_BREAKPAD_HANDLER[] = L"\\\\.\\pipe\\SteamCrashHandler\\BreakpadServer";
 
 void 
-    listen_pipe(char *name, void (*onconnect)(HANDLE client))
+    listen_pipe(char *name, void (*onconnect)(HANDLE client,void *params), void *args)
 {
     
     
@@ -135,7 +42,7 @@ void
 	if (p==INVALID_HANDLE_VALUE) break;
     
         if (ConnectNamedPipe(p,NULL)) {
-	    onconnect(p);
+	    onconnect(p,args);
 	    continue;
 	} else {
 	    CloseHandle(p);
@@ -146,13 +53,77 @@ void
 
 
 
+void 
+    read_pipe(LPPARAM lpParam)
+{
+    char buffer[4096];
+    pipe_t *pipe = (pipe_t)lpParam;
+    DWORD wasRead;
+    for(;;) {
+	if (ReadFile(pipe->w,buffer,4096,&wasRead,NULL)) {
+	    if (wasRead>0) {
+		dump_data("%s,P->F",pipe->name,buffer,wasRead);
+		fifo_write(pipe->l,buffer,wasRead);
+	    } 
+	} else {
+	    printf("error reading pipe...\n");
+	    break;
+	}
+    }
+}
 
+void
+    read_fifo(LPPARAM lpParam)
+{
+    char buffer[4096];
+    pipe_t *pipe = (pipe_t)lpParam;
+    int wasRead;
+    DWORD actualWritten;
+    for(;;) {
+	wasRead = fifo_read(pipe->l,buffer,4096);
+	if (wasRead<0) {
+	    printf("error reading fifo...\n");
+	    break;
+	}
+	dump_data("%s, F->P",pipe->name,buffer,wasRead);
+	if (!WriteFile(pipe->w,buffer,wasRead,&actualWritten,NULL)) {
+	    printf("error writing to pipe...\n");
+	    break;
+	}
+	if (wasRead!=actualWritten) {
+	    printf("error writing data to pipe\n");
+	    break;
+	}
+    }
+}
 
+void 
+    redirect_pipe_to_fifo(char *name, char *p, char *f)
+{
+    pipe_t *pipe = (pipe_t*)malloc(sizeof(pipe_t));
+    if (pipe==NULL) return;
+    
+    void *fifo = fifo_open(f);
+    if (fifo==NULL) {
+	printf("can't open \"%s\", exiting\n", f);
+    }
+    
+    
+}
 
+void 
+    onclient(HANDLE p, void *params)
+{
+}
 
-
-
-
-
-
-*/
+int _tmain(int argc, char *argv[]) {
+    char *named_pipe;
+    char *fifo;
+    if (argc<2) {
+	printf("Usage: piperedir.exe \"\\\\.\\pipe\\<pipe-to-listen>\" \"/path/to/fifo\"\n");
+	return 0;
+    }
+    named_pipe = argv[1];
+    fifo = argv[2];
+    redirect_pipe_to_fifo(named_pipe,fifo);
+}
