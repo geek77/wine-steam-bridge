@@ -1,18 +1,17 @@
-#include <config.h>
-#include <wine/port.h>
+
 #include <stdio.h>
+#include <fcntl.h>
 #include <string.h>
 #include <stdarg.h>
-#include <windef.h>
-#include <winbase.h>
-#include <wincon.h>
-#include <winnls.h>
-#include <winuser.h>
+#include <windows.h>
+// #include <windef.h>
+// #include <winbase.h>
+// #include <wincon.h>
+// #include <winnls.h>
+// #include <winuser.h>
 
-#include <wine/unicode.h>
-// #include <wine/debug.h>
 
-#include <pipeproxy/pipeproxy.h>
+#include "pipeproxy.h"
 
 // WINE_DEFAULT_DEBUG_CHANNEL(piperedir);
 
@@ -32,8 +31,10 @@ typedef struct _pipe {
 } pipe_t;
 
 
-#define return_with_error(...) fprintf(stderr,"error: %s at %s : ",__FUNCTION__,__FILE__); fprintf(stderr,__VA_ARGS__); return;
-#define WINE_TRACE(...) printf("trace: %s at %s : ",__FUNCTION__,__FILE__); printf(__VA_ARGS__);
+
+#define return_with_error(...) fprintf(stdout,"error: %s at %s : ",__FUNCTION__,__FILE__); fprintf(stdout,__VA_ARGS__); fflush(stdout); return
+#define WINE_TRACE(...) fprintf(stdout,"trace: %s at %s : ",__FUNCTION__,__FILE__); fprintf(stdout,__VA_ARGS__);  fflush(stdout)
+#define strnlen(a,b) strlen(a)
 /*
 
     pipe proc
@@ -44,12 +45,12 @@ static const wchar_t WIN_BREAKPAD_HANDLER[] = L"\\\\.\\pipe\\SteamCrashHandler\\
 char* last_error(void)
 {
     char* cstr;
-    FormatMessage(
+    FormatMessageA(
 	FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
 	NULL,
 	GetLastError(),
 	MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
-	(LPCSTR) &cstr,
+	(LPSTR) cstr,
 	0,
 	NULL);    
     return cstr;
@@ -57,7 +58,7 @@ char* last_error(void)
 
 LPWSTR tomb(char *s) {
     int size = 0;
-     LPWSTR *result = NULL;
+     LPWSTR result = NULL;
      int required = MultiByteToWideChar(CP_UTF8, 0,  s, strnlen(s,1024), result,0);
      if (required>0) {
         size = required*sizeof(WCHAR)+2;
@@ -73,7 +74,7 @@ void
     listen_pipe(char *name, void (*onconnect)(HANDLE client,void *params), void *args)
 {
     LPWSTR _name = tomb(name);
-    WINE_TRACE("%s\n", _name);    
+    WINE_TRACE("begin '%s'->'%s'\n", name, (char*)_name);    
     
     HANDLE p;
     for (;;) {
@@ -81,8 +82,7 @@ void
 	p = CreateNamedPipeW(
 	    _name,
 	    PIPE_ACCESS_DUPLEX,
-	    PIPE_TYPE_BYTE |
-	    PIPE_READMODE_BYTE | PIPE_WAIT,
+	    PIPE_TYPE_BYTE | PIPE_WAIT,
 	    1,
 	    1024,
 	    1024,
@@ -94,8 +94,8 @@ void
 	    break;
 	}
 	
-
-        if (ConnectNamedPipe(p,NULL)) {
+	WINE_TRACE("pipe \"%s\" created, listen\n",name);
+        if (ConnectNamedPipe(p,NULL)) {        
 	    onconnect(p,args);
 	    continue;
 	} else {
@@ -194,7 +194,73 @@ void
 
  */
 
+#define MAX_CONSOLE_LINES 500 
+// #define _O_TEXT 0 
+void RedirectIOToConsole()
+
+{
+    int hConHandle;
+    long lStdHandle;
+
+    CONSOLE_SCREEN_BUFFER_INFO coninfo;
+
+    FILE *fp;
+
+    // allocate a console for this app
+
+    AllocConsole();
+
+    // set the screen buffer to be big enough to let us scroll text
+
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &coninfo);
+
+    coninfo.dwSize.Y = MAX_CONSOLE_LINES;
+
+    SetConsoleScreenBufferSize(GetStdHandle(STD_OUTPUT_HANDLE), coninfo.dwSize);
+
+// redirect unbuffered STDOUT to the console
+
+    lStdHandle = (long)GetStdHandle(STD_OUTPUT_HANDLE);
+
+    hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
+
+    fp = _fdopen( hConHandle, "w" );
+
+    *stdout = *fp;
+
+    setvbuf( stdout, NULL, _IONBF, 0 );
+
+    // redirect unbuffered STDIN to the console
+
+    lStdHandle = (long)GetStdHandle(STD_INPUT_HANDLE);
+
+    hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
+
+    fp = _fdopen( hConHandle, "r" );
+
+    *stdin = *fp;
+
+    setvbuf( stdin, NULL, _IONBF, 0 );
+
+// redirect unbuffered STDERR to the console
+
+    lStdHandle = (long)GetStdHandle(STD_ERROR_HANDLE);
+
+    hConHandle = _open_osfhandle(lStdHandle, _O_TEXT);
+
+    fp = _fdopen( hConHandle, "w" );
+
+    *stderr = *fp;
+
+    setvbuf( stderr, NULL, _IONBF, 0 );
+
+
+
+}
+
 int main(int argc, char *argv[]) {
+    // RedirectIOToConsole();
+    fprintf(stderr,"hello,world\n");
     WINE_TRACE("\n");
     params_t params;
     if (argc<2) {

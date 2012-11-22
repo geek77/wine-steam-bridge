@@ -26,14 +26,14 @@ void stubFn(void) {
 #include "auto.incl"
 
 void * libsteam_api(void) {    
-    char *steam_api_path;
+    char *c;
     void *h;
-    c = getenv("STEAM_API_SO", RTLD_NOW)
+    c = getenv("STEAM_API_SO");
     if (c == NULL) {
 	ERR("environment variable 'STEAM_API_SO' not defined\n");
 	return NULL;
     }
-    h = dlopen(c);
+    h = dlopen(c, RTLD_NOW);
     return h;
 }
 
