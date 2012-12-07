@@ -1,9 +1,0 @@
-# Generated from steam_api.dll by winedump.
-MODULE    = steam_api.dll
-EXTRALIBS = -ldl
-
-C_SRCS = \
-	steam_api_main.c
-
-@MAKE_DLL_RULES@
-

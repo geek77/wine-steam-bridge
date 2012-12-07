@@ -7,12 +7,15 @@
  *
  */
 
+#define __WINESRC__
 #include "config.h"
 #include <stdlib.h>
 #include <stdarg.h>
 #include <dlfcn.h>
 #include "windef.h"
 #include "winbase.h"
+#include "winnt.h"
+
 #include "wine/debug.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(steam_api);

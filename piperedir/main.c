@@ -96,6 +96,7 @@ void
 	
 	WINE_TRACE("pipe \"%s\" created, listen\n",name);
         if (ConnectNamedPipe(p,NULL)) {        
+    	    WINE_TRACE("client connected...\n");
 	    onconnect(p,args);
 	    continue;
 	} else {
